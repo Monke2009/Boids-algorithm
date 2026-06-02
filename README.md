@@ -29,3 +29,7 @@ Because the program only updates once all conditions are considered, there will 
 
 # How to use:
 - Read the CONTROLS section on the upper left corner of the screen when running the program
+
+# CREDIT:
+https://cs.stanford.edu/people/eroberts/courses/soco/projects/2008-09/modeling-natural-systems/boids.html
+https://processing.org/examples/flocking.html
