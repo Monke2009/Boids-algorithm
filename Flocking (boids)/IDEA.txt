@@ -1,0 +1,55 @@
+Loop (boid list):
+  draw_boid()
+  update_boid_positions()
+
+
+procedure update_boid_positions():
+  Loop boid in (boid list):
+    centre_mas_ = centre_mass   (boid)
+    distancing_ = distancing    (boid)
+    match_velo_ = match_velocity(boid)
+
+    boid.velocity = boid.velocity.add(centre_mas_).add(distancing_).add(match_velo_)
+    limit_velocity(boid)
+    boid.position = boid.position.add(boid.velocity)
+
+
+procedure centre_mass(boid):
+  perceived_center = (0, 0)
+  if len(boid_list) <= 1: return (0, 0) # Division by 0 proof
+
+  Loop boid_adj in (boid_list):
+    if boid_adj != boid:
+      perceived_center = perceived_center.add(boid_adj.position) # Adds positions to perceived center
+
+  perceived_center =  perceived_center.divide(boid_count-1) # Find medium value -> perceived center
+  return (perceived_center.subtract(boid.position).divide(100)) # Moves 1/100 of the vector toward centre mass
+
+
+procedure distancing(boid):
+  distancing = (0, 0)
+  if len(boid_list) <= 1: return (0, 0) # Division by 0 proof
+
+  Loop boid_adj in (boid_list):
+    if boid_adj != boid:
+      if boid_adj.position.subtract(boid.position).absolute() < 100: # If distant is smaller than 100 -> distant
+        distancing = distancing.subtract(boid_adj.position.subtract(boid.position)) # Moves away from the other boid's position
+
+  return distancing
+
+
+procedure match_velocity(boid):
+  perceived_velocity = (0, 0)
+  if len(boid_list) <= 1: return (0, 0) # Division by 0 proof
+
+  Loop boid_adj in (boid_list):
+    if boid_adj != boid:
+      perceived_velocity = perceived_velocity.add(boid_adj.velocity) # Adds velocity to perceived velocity
+
+  perceived_velocity = perceived_velocity.divide(boid_count-1) # Finds medium value -> peceived velocity
+  return perceived_velocity.subtract(boid.velocity).divide(8) # Adjusts slowly 1/8 of the perceived velocity
+
+procedure limit_velocity (boid):
+  vlim = 20
+  if boid.velocity.absolute() > vlim:
+    boid.velocity = (boid.velocity.divide(boid.velocity.absolute())).multiply(vlim)
