@@ -14,7 +14,7 @@ def main():
     
     running = True
     while running:
-
+        dt = clock.tick(FPS) / 1000
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 running = False
