@@ -24,7 +24,7 @@ Because the program only updates once all conditions are considered, there will 
 
 
 # How to run:
-1. Install pygame: `pip install pygam.e`
+1. Install pygame: `pip install pygame`
 2. Run: `python main.py`
 
 # How to use:
