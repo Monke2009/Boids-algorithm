@@ -1,120 +1,36 @@
-# Genetic Algorithm
+# FLOCKING ALGORITHM
 
-*Project #15 – An experiment in evolutionary machine learning*
+This is my 14th project, called the flocking algorithm or (boids)
 
-## Overview
+# How it works:
+- Every boid would try to move toward the center of mass of neighboring boids
+- Every boid would try to keep a small distance from other boids- Every boid would try to match the velocity of nearby boids
+# Further tweaking:
+- Every boid would attempt to move away from the others once near
 
-This project uses a genetic algorithm to evolve autonomous agents that learn to survive inside a circular arena while avoiding a moving projectile ("lazer").
+In this case, I used a vector to calculate every boid's next move: The boid would consider every determinant (Including Centre mass, Distancing, Match velocity, Avoid borders)
 
-Each agent is controlled by two evolved weights:
+Because the program only updates once all conditions are considered, there will be no jittering
 
-* **w_lazer** – How strongly the agent avoids the lazer
-* **w_border** – How strongly the agent avoids the arena boundary
+# UPDATE 1.1:
+- Added chunk separations (Boids now would only check for boids in chunks within detection radius) -> Reduce complexity from O(boids * boids) to O(boids * neighboring_chunks_boid_count) -> boid limit exceeds 200
+- Additional feature: Boids now move more chaotically -> more natural in my opinion. (Found this accidentally).
+- There is a worst-case scenario that causes a temporary performance spike, but it only occurs when the user deliberately spawns 200 boids on top of each other. and im definitely not gonna waste my time fixing it
 
-Instead of manually programming a survival strategy, the population evolves over multiple generations. Agents that survive longer achieve higher fitness scores and are more likely to pass their genes to future generations through selection, crossover, and mutation.
-
----
-
-## How It Works
-
-### Agent Controller
-
-Each frame, an agent calculates steering forces based on environmental inputs:
-
-#### Lazer Avoidance
-
-Agents steer away from the current lazer position. The closer the lazer gets, the stronger the avoidance force becomes.
-
-#### Border Avoidance
-
-Agents steer back toward the arena when approaching the boundary.
-
-The final steering direction is determined by combining these forces using the agent's evolved weights.
-
----
-
-## Fitness Function
-
-Fitness is based entirely on survival time:
-
-```python
-fitness = survival_time * 0.5
-```
-
-Agents that survive longer are considered more successful and have a higher chance of contributing genes to future generations.
-
----
-
-## Evolution Process
-
-At the end of each generation:
-
-1. Agents are ranked by fitness.
-2. High-performing genes are preserved.
-3. Parent genes are selected from the archive.
-4. New offspring are created using crossover.
-5. Random mutations introduce genetic diversity.
-6. The next generation is spawned and evaluated.
-
-Over time, the population evolves increasingly effective survival strategies.
+# UPDATE 1.2 (FINAL):
+- Added HUD
+- Added Add/Delete boids
+- Added Debug mode (when enabled, you can enable Add_boids, and chunks would glow when boids are inside)
+- Added Instructions
 
 
-## Update Log
+# How to run:
+1. Install pygame: `pip install pygame`
+2. Run: `python main.py`
 
-### v1.0 – Initial Genetic Algorithm
+# How to use:
+- Read the CONTROLS section on the upper left corner of the screen when running the program
 
-* Added population-based evolution system
-* Implemented fitness based on survival time
-* Added archive system for preserving successful genes
-* Implemented crossover and mutation
-
-### v1.1 – Simplified Objective & Improved gene diversity
-
-* Removed collision penalties
-* Removed neighbor avoidance behavior
-* Refocused training objective on projectile survival only
-* Improved gene archive handling
-* Added uniqueness checks during offspring generation (Prevents stagnation...mostly)
-* Increased genetic diversity to reduce premature convergence
-
-### Future Plans
-
-* Variable movement speed
-* Emergency dash mechanic with cooldown
-* Additional environmental sensors
-* More complex controllers (hidden-layer neural networks)
-* Multiple projectiles and dynamic difficulty
-
----
-
-## Technologies
-
-* Python
-* Pygame
-* NumPy
-* Pandas
-
----
-
-## Running
-
-Install dependencies:
-
-```bash
-pip install pygame numpy pandas
-```
-## First Run
-
-If no saved data exists, the simulation starts with a randomly generated population.
-
-After the first generation completes, the following files are created automatically:
-
-- `champion.csv` – Best-performing agent discovered so far
-- `weights.csv` – Saved gene archive
-- `stats.csv` – Generation statistics and fitness history
-
-Run the simulation:
-
-```bash
-python main.py
-```
+# CREDIT:
+https://cs.stanford.edu/people/eroberts/courses/soco/projects/2008-09/modeling-natural-systems/boids.html
+https://processing.org/examples/flocking.html
