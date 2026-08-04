@@ -1,504 +1,351 @@
 from Settings import *
+from random import uniform
 import pygame as pg
-import pandas as pd
-import numpy as np
 import math
-import random
 
-
-def load_weights():
-    try:
-        weights_df = pd.read_csv("weights.csv")
-
-        weights = weights_df[
-            ['fitness', 'w_lazer', 'w_border']
-        ].values
-
-        if len(weights) == 0:
-            raise ValueError
-
-        fitness = weights[:,0]
-        genes = weights[:,1:]
-        return genes, fitness
-
-    except:
-        print("Creating new random weights")
-        genes = np.random.uniform(-1, 1, (POPULATION, 2))
-        fitness = np.zeros(POPULATION)
-        return genes, fitness
-
-def save_stats(generation, best, average):
-    data = {
-        "generation": [generation],
-        "best": [best],
-        "average": [average]
-    }
-
-    df = pd.DataFrame(data)
-
-    try:
-        old_df = pd.read_csv("stats.csv")
-        df = pd.concat([old_df, df], ignore_index=True)
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        pass
-
-    df.to_csv("stats.csv", index=False)
-
-def load_generation():
-    try:
-        stats = pd.read_csv("stats.csv")
-        if len(stats) > 0:
-            return int(stats["generation"].iloc[-1])
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        pass
-
-    return 0
-
-def load_champion():
-    try:
-        champion_df = pd.read_csv("champion.csv")
-
-        fitness = champion_df["fitness"].iloc[0]
-
-        weights = champion_df[
-            ['w_lazer', 'w_border']
-        ].values[0]
-
-        print(
-            "Loaded champion:",
-            fitness,
-            weights
-        )
-
-        return fitness, weights
-
-    except:
-        return -float("inf"), None
-
-def draw_text(screen, text, x, y, size=16):
-    font = pg.font.SysFont(None, size)
-    surface = font.render(text, True, (255,255,255))
-    screen.blit(surface, (x,y))
-
-
-# SINGLE BOID
 class Boid:
-    def __init__(self, position, velocity, direction, acceleration, weights = None):
-        self.fitness = 0
-        self.time_alive = 0
-        self.position_x = position[0]
-        self.position_y = position[1]
-
-        # Movement variable (Acceleration still unused)
-        self.acceleration = acceleration
-        self.direction = direction
-        self.velocity = velocity
-
-        # Status
-        self.alive = True
-
-        # Reward factors
-        self.collision_count = 0
-        self.survival_time = 0
-
-        # Randomize weights if theres no weight
-        if weights is None:
-            self.weights = np.random.uniform(-1, 1, 2)
-        else:
-            self.weights = weights.copy()
-
-    def move(self):
-        dx = self.velocity * np.cos(self.direction)
-        dy = self.velocity * np.sin(self.direction)
-        self.position_x += dx
-        self.position_y += dy
+    def __init__(self):
+        # Give initial random velocity so they move from the start
+        self.velocity = Vector2(uniform(-MAXSPEED, MAXSPEED), uniform(-MAXSPEED, MAXSPEED))
+        self.position = Vector2(uniform(0, SCREENWIDTH), uniform(0, SCREENHEIGHT))
+        self.chunk_coords = None
         
+    def update_chunk(self):
+        return (int(self.position.x // CHUNK_SIZE), 
+                int(self.position.y // CHUNK_SIZE))
 
-    # steering based on other factors
-    def update(self, lazer_pos, flock):
-        steer_x = 0
-        steer_y = 0
-
-        # Lazer avoidance
-        dx = self.position_x - lazer_pos[0]
-        dy = self.position_y - lazer_pos[1]
-
-        lazer_dist = math.hypot(dx, dy)
-
-        if lazer_dist > 0:
-            strength = max(0, 1 - lazer_dist/TRIGGER_DIST)
-            steer_x += self.weights[0]*dx/lazer_dist*strength
-            steer_y += self.weights[0]*dy/lazer_dist*strength
-
-        # Border avoidance
-        dx = self.position_x - CENTER[0]
-        dy = self.position_y - CENTER[1]
-
-        border_dist = math.hypot(dx, dy)
-
-        if border_dist > BORDER_RADIUS - 20:
-            steer_x -= self.weights[1]*dx/border_dist
-            steer_y -= self.weights[1]*dy/border_dist
-
-        # Apply steering
-        if steer_x != 0 or steer_y != 0:
-            target_direction = math.atan2(steer_y, steer_x)
-
-            difference = target_direction - self.direction
-
-            difference = (difference + PI) % (2*PI) - PI
-
-            turn_speed = 0.15
-
-            self.direction += np.clip(
-                difference,
-                -turn_speed,
-                turn_speed
-            )
-
-
-    # Calculate fitness (Prioritizing no collisions) aka calculating rewards
-    def calculate_fitness(self):
-        self.fitness = self.survival_time*0.5 # New calulation (Removed collision)
+    def limit_velocity(self):
+        speed = math.hypot(self.velocity.x, self.velocity.y)
+        if speed > MAXSPEED:
+            self.velocity = self.velocity.multiply(MAXSPEED / speed)
+        if speed < MINSPEED:
+            self.velocity = self.velocity.multiply(MINSPEED / speed)
 
     def draw(self, screen):
-        if self.alive:
-            pg.draw.circle(screen, (225, 225, 225), (self.position_x, self.position_y), BOID_RADIUS)
-
-
-
-
-
-
-
-
+        if self.velocity.length() < 0.01:
+            angle = 0
+        else:
+            angle = math.atan2(self.velocity.y, self.velocity.x)
+        
+        # Triangle relative to center (tip points right = 0 radians)
+        tip = Vector2(BOID_SIZE * 2, 0)
+        left_corner = Vector2(-BOID_SIZE * 1.5, -BOID_SIZE)
+        right_corner = Vector2(-BOID_SIZE * 1.5, BOID_SIZE)
+        
+        # Rotate and translate
+        tip = self.position.add(tip.rotate(angle))
+        left = self.position.add(left_corner.rotate(angle))
+        right = self.position.add(right_corner.rotate(angle))
+        
+        points = [(tip.x, tip.y), 
+                (left.x, left.y), 
+                (right.x, right.y)]
+        pg.draw.polygon(screen, WHITE, points)
 
 class Boids:
-    def __init__ (self):
-        # Load weights before generation
-        all_weights, fitness = load_weights()
-        self.average_fitness = 0
-        self.alive_count = 0
-        self.boids = []
+    def __init__(self):
+        self.boidlist = []
 
-        # Generate boids
-        for _ in range(POPULATION):
-            boid = Boid(
-                position = self.random_position(),
-                velocity = random.uniform(1, 3),
-                direction = random.uniform(0, 2*PI),
-                acceleration=0,
-                weights = random.choices(
-                    all_weights,
-                    weights=np.arange(len(all_weights),0,-1)
-                )[0]
-            )
-            self.boids.append(boid)
 
-    def run(self, lazer):
-        # Just updating boids
-        for boid in self.boids:
-            if boid.alive:
-                boid.survival_time += 1
-                boid.update((lazer.position_x, lazer.position_y), self.boids)
-                self.alive_count += 1
-                boid.move()
+        self.chunk_cols = SCREENWIDTH//CHUNK_SIZE
+        self.chunk_rows = SCREENHEIGHT//CHUNK_SIZE
+        self.chunks = [[[] for _ in range(self.chunk_cols + 1)] 
+                        for _ in range(self.chunk_rows + 1)]
+        
+        self.selected_chunk = None  # Store hovered/selected chunk
+        self.add_mode = False
+        self.debug_mode = False
+        self.add_del = True
+        self.controls = True
+        
+        self.scale_radius = 0  
+        self.last_action_time = 0
 
-        # Calculate average fitness
-        for boid in self.boids:
-            boid.calculate_fitness()
-            self.average_fitness += boid.fitness
-        self.average_fitness /= POPULATION
+    def can_act(self, action):
+        if action == "debug mode" or action == "CONTROLS": cooldown = 300
+        elif action == "add_mode": cooldown = 300
+        else: cooldown = 50
 
-    def draw(self, screen):
-        for boid in self.boids:
+        current_time = pg.time.get_ticks()
+        if current_time - self.last_action_time >= cooldown:
+            self.last_action_time = current_time
+            return True
+        return False
+
+    def update(self, screen):
+        self.update_positions()
+        self.draw_boids(screen)
+
+    def draw_boids(self, screen):
+        for boid in self.boidlist:
             boid.draw(screen)
 
-    def check_lazer(self, lazer):
-        for boid in self.boids:
-            dist = math.hypot (boid.position_x - lazer.position_x, boid.position_y - lazer.position_y)
+    def update_positions(self):
+        for row in self.chunks:
+            for chunk in row:
+                chunk.clear()
 
-            # If touching lazer -> die (Adjusted for better collision realism)
-            if dist < LAZER_RADIUS + BOID_RADIUS:
-                boid.alive = False
+        for boid in self.boidlist:
+            neighbors = self.get_neighbors(boid)
+            centre_mas_ = self.centre_mass(boid, neighbors)
+            distancing_ = self.distancing(boid, neighbors)
+            match_velo_ = self.match_velocity(boid, neighbors)
+            bound_posi_ = self.bound_position(boid)
 
-    def check_border(self): # Kill once touched border
-        for boid in self.boids:
-            dist = math.hypot (boid.position_x - CENTER[0], boid.position_y - CENTER[1])
-            if dist > BORDER_RADIUS - BOID_RADIUS:
-                boid.alive = False
+            boid.velocity = boid.velocity.add(centre_mas_)
+            boid.velocity = boid.velocity.add(distancing_)
+            boid.velocity = boid.velocity.add(match_velo_)
+            boid.velocity = boid.velocity.add(bound_posi_)
+            boid.limit_velocity()
 
-    def random_position(self):
-        while True:
-            x = random.uniform(CENTER[0] - BORDER_RADIUS, CENTER[0] + BORDER_RADIUS)
-            y = random.uniform(CENTER[1] - BORDER_RADIUS, CENTER[1] + BORDER_RADIUS)
-
-            if  math.hypot(x - CENTER[0], y - CENTER[1]) < BORDER_RADIUS - BOID_RADIUS \
-            and math.hypot(x - CENTER[0], y - CENTER[1]) > LAZER_RADIUS + BOID_RADIUS + 10: return (x, y)
-
-        
-
-
+            boid.position = boid.position.add(boid.velocity)
+            cx, cy = boid.update_chunk()
+            if 0 <= cx < self.chunk_cols and 0 <= cy < self.chunk_rows:
+                self.chunks[cy][cx].append(boid)
+                boid.chunk_coords = (cx, cy)    
 
 
+    # -----CHUNKS-----
+    def handle_chunk_edit(self):
+        # Gets keys 
+        keys = pg.key.get_pressed()
+        if keys[pg.K_t] and self.can_act("debug mode"):
+            self.debug_mode = not self.debug_mode
+        if keys[pg.K_i] and self.can_act("CONTROLS"):
+            self.controls = not self.controls
 
-
-
-
-class Lazer:
-    def __init__ (self, direction, velocity):
-        self.position_x = CENTER[0]
-        self.position_y = CENTER[1]
-        self.direction = direction
-        self.velocity = velocity
-
-    def update(self):
-        self.position_x += self.velocity * np.cos(self.direction)
-        self.position_y += self.velocity * np.sin(self.direction)
-
-        dist = math.hypot(self.position_x - CENTER[0], self.position_y - CENTER[1])
-        if dist >= BORDER_RADIUS - LAZER_RADIUS:
-            normal_angle = math.atan2(self.position_y - CENTER[1], self.position_x - CENTER[0])
-
-            # Reflect angle and randomize
-            self.direction = 2*normal_angle - self.direction - math.pi
-            self.direction += random.uniform(-PI/8, PI/8)
-            self.position_x = CENTER[0] + (BORDER_RADIUS-LAZER_RADIUS) * math.cos(normal_angle)
-            self.position_y = CENTER[1] + (BORDER_RADIUS-LAZER_RADIUS) * math.sin(normal_angle)
-
-    def draw(self, screen):
-        pg.draw.circle(screen, LAZERCOLOR, (self.position_x, self.position_y), LAZER_RADIUS)
-
-
-
-
-
-
-
-
-
-class UselessBoundary:
-    def __init__(self):
-        self.position = CENTER
-
-    def draw(self, screen):
-        pg.draw.circle(screen, WHITE, CENTER, BORDER_RADIUS)
-        pg.draw.circle(screen, SCREENCOLOR, CENTER, BORDER_RADIUS-1)
-
-
-
-
-
-
-
-
-
-class Arena:
-    def __init__(self):
-        self.time_alive = 0
-        self.generation = load_generation()+1
-        self.survivors = 0
-
-        self.best_fitness, self.best_weights = load_champion()
-
-        self.population = Boids()
-        self.lazer = Lazer(
-            direction=random.uniform(0, 2*PI),
-            velocity=5
-        )
-        self.arena = UselessBoundary()
-
-    def run(self, screen):
-        # Update and draws
-        self.time_alive += 1
-        self.lazer.update()
-        self.arena.draw(screen)
-        self.lazer.draw(screen)
-        self.population.draw(screen)
-
-        self.draw_stats(screen)
-        self.population.run(self.lazer)
-
-        self.population.check_border()
-        self.population.check_lazer(self.lazer)
-
-        # Check survivors
-        if self.is_dead() or self.time_alive > MAX_TIME:
-            self.time_alive = 0
-            self.new_generation()
-
-    def draw_stats(self, screen):
-        alive = sum(
-            1 for boid in self.population.boids
-            if boid.alive
-        )
-
-        current_best = max(
-            (boid.fitness for boid in self.population.boids),
-            default=0
-        )
-
-        draw_text(
-            screen,
-            f"Generation: {self.generation}",
-            10,
-            10
-        )
-
-        draw_text(
-            screen,
-            f"Alive: {alive}/{POPULATION}",
-            10,
-            40
-        )
-
-        draw_text(
-            screen,
-            f"Current best: {current_best:.2f}",
-            10,
-            70
-        )
-
-        draw_text(
-            screen,
-            f"Champion: {self.best_fitness:.2f}",
-            10,
-            100
-        )
-
-        draw_text(
-            screen,
-            f"Time: {self.time_alive}/{MAX_TIME}",
-            10,
-            130
-        )
-
-    def is_dead(self):
-        for boid in self.population.boids:
-            if boid.alive: return False
-        return True
-
-    # New generation (Take the fittest)
-    def new_generation(self):
-        for boid in self.population.boids:
-            boid.calculate_fitness()
-
-        # Ranking
-        ranked = sorted(
-            self.population.boids,
-            key=lambda b: b.fitness,
-            reverse=True
-        )
-
-        archive = []
-        old_weights, old_fitness = load_weights()
-
-        # load old good genes
-        for gene, fit in zip(old_weights, old_fitness):
-            archive.append(
-                [fit, *gene]
-            )
-
-
-        # add current generation genes
-        for boid in ranked:
-            archive.append(
-                [boid.fitness, *boid.weights]
-            )
-
-
-        # sort best first
-        archive.sort(
-            key=lambda x:x[0],
-            reverse=True
-        )
-
-
-
-        seen = set(tuple(gene[1:]) for gene in archive)
-
-        # Breed until full population (no duplicates)
-        while len(archive) < POPULATION:
-            parent1 = random.choice(archive[:POPULATION//2])[1:]
-            parent2 = random.choice(archive[:POPULATION//2])[1:]
+        if self.debug_mode:
+            # Mode switching (no cooldown needed, these are toggles)
+            if keys[pg.K_s] and self.can_act("add_mode"):
+                self.add_mode = not self.add_mode
+            if self.add_mode and keys[pg.K_a] and self.can_act("add_mode"):
+                self.add_del = not self.add_del
             
-            child = np.where(
-                np.random.random(len(parent1)) < 0.5,
-                parent1,
-                parent2
-            )
-            child += np.random.normal(0, 0.2, len(child))
-            child = np.clip(child, -1, 1)
+            # Gets mouse position
+            if self.add_mode:
+                mouse_pos = pg.mouse.get_pos()
+                center_col = int(mouse_pos[0] // CHUNK_SIZE)
+                center_row = int(mouse_pos[1] // CHUNK_SIZE)
+                
+                # Store selected chunk (center of scale)
+                if 0 <= center_row < self.chunk_rows and 0 <= center_col < self.chunk_cols:
+                    self.selected_chunk = (center_row, center_col)
+                else:
+                    self.selected_chunk = None
+                
+                # Left click = add or delete (use cooldown)
+                mouse_buttons = pg.mouse.get_pressed()
+                if mouse_buttons[0] and self.selected_chunk:
+                    center_row, center_col = self.selected_chunk
+                    
+                    # Scale mode: loop through square area
+                    for row in range(center_row - self.scale_radius, center_row + self.scale_radius + 1):
+                        for col in range(center_col - self.scale_radius, center_col + self.scale_radius + 1):
+                            if 0 <= row < self.chunk_rows and 0 <= col < self.chunk_cols:
+                                self.modify_chunk(row, col)
 
-            key = tuple(child)
-
-            if key not in seen:
-                seen.add(key)
-                archive.append([np.mean(old_fitness), *child])
-
-
-        # Ranked index = 0 - POPULATION
-        # Ranked stored values = Boid
-        current_champ_fit = ranked[0].fitness
-        current_champ_weights = ranked[0].weights
-        print(f"fit {current_champ_fit} | Seed {current_champ_weights}")
-
-        if current_champ_fit > self.best_fitness:
-            self.best_weights = current_champ_weights.copy()
-            self.best_fitness = current_champ_fit
-        
-
-        # Sort and only save best genes
-        archive.sort(
-            key = lambda x:x[0],
-            reverse=True
-        )
-        archive = archive[:POPULATION]
-
-
-
-
-
-
-        # Save champ
-        pd.DataFrame(
-            [[self.best_fitness, *self.best_weights]],
-            columns =[
-                "fitness",
-                "w_lazer",
-                "w_border"
+    def modify_chunk(self, row, col):
+        if self.add_del:
+            # Add mode: spawn a new boid in this chunk
+            new_boid = Boid()
+            chunk_center_x = col * CHUNK_SIZE + CHUNK_SIZE // 2
+            chunk_center_y = row * CHUNK_SIZE + CHUNK_SIZE // 2
+            new_boid.position = Vector2(chunk_center_x, chunk_center_y)
+            if len(self.boidlist) < BOID_LIMIT:
+                self.boidlist.append(new_boid)
+        else:
+            # Delete mode: remove all boids in this chunk
+            self.boidlist = [
+                b for b in self.boidlist
+                if not (int(b.position.x // CHUNK_SIZE) == col and 
+                        int(b.position.y // CHUNK_SIZE) == row)
             ]
-        ).to_csv(
-            "champion.csv",
-            index = False
-        )
-
-
-        # Save new archive
-        pd.DataFrame(
-            archive,
-            columns=[
-                "fitness",
-                "w_lazer",
-                "w_border"
-            ]
-        ).to_csv(
-            "weights.csv",
-            index=False
-        )
-
-
-        # Save logs
-        save_stats(self.generation, current_champ_fit, self.population.average_fitness)
-        print(f"Generation {self.generation} | Fittest {current_champ_fit} | Average {self.population.average_fitness}")
         
+    def draw_chunks(self, screen):
+        for cy in range(len(self.chunks)):
+            for cx in range(len(self.chunks[cy])):
+                chunk_x = cx * CHUNK_SIZE
+                chunk_y = cy * CHUNK_SIZE
+                chunk_rect = (chunk_x, chunk_y, CHUNK_SIZE, CHUNK_SIZE)
+                color = CHUNK_EMPTY_COLOR
+                width = 1
+
+                if self.debug_mode:
+                    # Default colors
+                    if len(self.chunks[cy][cx]) == 0:
+                        color = CHUNK_EMPTY_COLOR
+                    else:
+                        color = CHUNK_BOID_COLOR
+                    
+                    # Check if this chunk is within scale radius of selected chunk
+                    is_in_scale_area = False
+                    if self.selected_chunk:
+                        center_row, center_col = self.selected_chunk
+                        if (abs(cy - center_row) <= self.scale_radius and 
+                            abs(cx - center_col) <= self.scale_radius):
+                            is_in_scale_area = True
+                    
+                    if self.add_mode:
+                        # Highlight selected area
+                        if is_in_scale_area:
+                            width = 2
+                            if not self.add_del:
+                                color = CHUNK_SELECTED_DELETE_COLOR  # Light red for delete
+                            else:
+                                color = CHUNK_SELECTED_ADD_COLOR  # Light green for add
+                        # Highlight just the hovered chunk (center)
+                        elif self.selected_chunk == (cy, cx):
+                            width = 2
+                            if not self.add_del:
+                                color = CHUNK_SELECTED_DELETE_COLOR  # Bright red
+                            else:
+                                color = CHUNK_SELECTED_ADD_COLOR  # Bright green
+                
+                pg.draw.rect(screen, color, chunk_rect, width)
+
+    def draw_hud(self, screen):
+        font = pg.font.Font(None, 15)  # Default pygame font, size 24
+        
+        # Info lines
+        debug_status = "ON" if self.debug_mode else "OFF"
+        add_mode = "ON" if self.add_mode else "OFF"
+        action = "ADD" if self.add_del else "DELETE"
+        radius_text = f"Radius: {self.scale_radius}"
+        boid_count = f"Boids: {len(self.boidlist)}"
+        
+        # Build text surface
+        lines = [
+            f"Debug: {debug_status}",
+            f"Add mode {add_mode}", 
+            f"Action: {action}",
+            f"Selection Radius: {radius_text} chunk(s)",
+            f"Boids: {boid_count}"
+        ]
+        
+        # Draw background box and text
+        y_offset = 10
+        max_width = 0
+        
+        # First pass: find max width for background box
+        for line in lines:
+            text_surface = font.render(line, True, (255, 255, 255))
+            max_width = max(max_width, text_surface.get_width())
+
+        
+        # Draw text
+        if self.debug_mode:
+            for i, line in enumerate(lines):
+                text_surface = font.render(line, True, (255, 255, 255))
+                screen.blit(text_surface, (SCREENWIDTH - text_surface.get_width() - 10, y_offset + i * 25))
+        else:
+            text_surface = font.render(f"Debug: {debug_status}", True, (255, 255, 255))
+            screen.blit(text_surface, (SCREENWIDTH - text_surface.get_width() - 10, y_offset))
+
+    def draw_instructions(self, screen):
+        font = pg.font.Font(None, 15)
+        lines = [
+            "--- CONTROLS ---",
+            "T: Toggle Debug Mode",
+            "S: Toggle Add Mode (Allows add or delete)",
+            "A: Switch Add/Delete Mode (green/red) Only works when Add mode is on",
+            "+ / - : Increase/Decrease Scale Radius",
+            "Left Click: Add/Delete boids in area",
+            "I: Toggle CONTROLS",
+            "",
+            f"Current Mode: {'ADD' if self.add_del else 'DELETE'}",
+            f"Scale Radius: {self.scale_radius} chunk(s)"
+        ]
+        
+        y_offset = 10
+        for line in lines:
+            text = font.render(line, True, (200, 200, 200))
+            screen.blit(text, (10, y_offset))
+            y_offset += 18
 
 
-        # New world
-        self.population = Boids()
-        self.generation += 1
+    # -----BOIDS-----
+    # Attempt to move toward the flock's centre mass
+    def centre_mass(self, boid, neighbors):
+        perceived_center = Vector2(0, 0)
+        count = 0  # Count only boids within radius
+        
+        for adjacent_boid in neighbors:
+            if adjacent_boid != boid:
+                distance = math.hypot(adjacent_boid.position.x - boid.position.x, adjacent_boid.position.y - boid.position.y)
+                if distance <= RECOGNITION_RADIUS: # Only boids that are within recognition distance are taken into account
+                    perceived_center = perceived_center.add(adjacent_boid.position) # Add vector to find median later on
+                    count += 1
+        
+        if count > 0:  # Only divide by actual neighbors found
+            perceived_center = perceived_center.divide(count) # Finds median
+            return perceived_center.subtract(boid.position).divide(200)  # Needs 200 steps to reach median -> prevents teleporting
+        return Vector2(0, 0)
 
-        self.lazer = Lazer(
-            direction=random.uniform(0, 2*PI),
-            velocity=5
-        )
+    # Distancing + push force amplifies the closer the distance
+    def distancing(self, boid, neighbors):
+        distancin_ = Vector2(0, 0)
+        
+        for adjacent_boid in neighbors:
+            if adjacent_boid != boid:
+                difference = adjacent_boid.position.subtract(boid.position)
+                distance = math.hypot(difference.x, difference.y)
+
+                if distance < AVOID_DISTANCE and distance > 0:  # Avoid division by zero
+                    # Push away stronger when closer
+                    distancin_ = distancin_.subtract(difference.divide(distance * distance))
+        
+        return distancin_
+
+    # Attempt to match flock's velocity
+    def match_velocity(self, boid, neighbors):
+        perceived_velocity = Vector2(0, 0)
+        count = 0
+        
+        for adjacent_boid in neighbors:
+            if adjacent_boid != boid:
+                distance = math.hypot(adjacent_boid.position.x - boid.position.x, adjacent_boid.position.y - boid.position.y)
+                if distance <= RECOGNITION_RADIUS:  # Only boids that are within recognition distance are taken into account
+                    perceived_velocity = perceived_velocity.add(adjacent_boid.velocity) # Adds to perceived velocity to find median later on
+                    count += 1
+        
+        if count > 0:
+            perceived_velocity = perceived_velocity.divide(count) # Medium velocity
+            return perceived_velocity.subtract(boid.velocity).divide(20) # Takes 20 steps to reach medium velocity, prevents coke-like behavior
+        return Vector2(0, 0) # Prevents division by 0
+    
+    # Prevent getting out of bound by steering
+    def bound_position(self, boid):
+        v = Vector2(0, 0)
+        margin = 50  # How close to edge before turning
+        turn_factor = 0.5 # AKA turn step, dont judge my english
+        
+        if boid.position.x < margin:
+            v.x = turn_factor
+        elif boid.position.x > SCREENWIDTH - margin:
+            v.x = -turn_factor
+        
+        if boid.position.y < margin:
+            v.y = turn_factor
+        elif boid.position.y > SCREENHEIGHT - margin:
+            v.y = -turn_factor
+        
+        return v
+    
+    # Identify flock
+    def get_neighbors(self, boid):
+        neighbors = []
+        chunk_x = int(boid.position.x // CHUNK_SIZE)
+        chunk_y = int(boid.position.y // CHUNK_SIZE)
+        
+        # How many chunks to check in each direction
+        chunk_radius = int(RECOGNITION_RADIUS / CHUNK_SIZE) + 1
+        
+        for dx in range(-chunk_radius, chunk_radius + 1):
+            for dy in range(-chunk_radius, chunk_radius + 1):
+                check_x = chunk_x + dx
+                check_y = chunk_y + dy
+                
+                if 0 <= check_x < self.chunk_cols and 0 <= check_y < self.chunk_rows:
+                    neighbors.extend(self.chunks[check_y][check_x])
+        
+        return neighbors # Yes
