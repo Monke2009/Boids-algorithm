@@ -103,7 +103,15 @@ Install dependencies:
 ```bash
 pip install pygame numpy pandas
 ```
-Create files: champion.csv, stats.csv, weights.csv
+## First Run
+
+If no saved data exists, the simulation starts with a randomly generated population.
+
+After the first generation completes, the following files are created automatically:
+
+- `champion.csv` – Best-performing agent discovered so far
+- `weights.csv` – Saved gene archive
+- `stats.csv` – Generation statistics and fitness history
 
 Run the simulation:
 
