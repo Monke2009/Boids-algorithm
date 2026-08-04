@@ -103,6 +103,7 @@ Install dependencies:
 ```bash
 pip install pygame numpy pandas
 ```
+Create files: champion.csv, stats.csv, weights.csv
 
 Run the simulation:
 
