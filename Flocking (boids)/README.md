@@ -68,7 +68,7 @@ Over time, the population evolves increasingly effective survival strategies.
 * Added archive system for preserving successful genes
 * Implemented crossover and mutation
 
-### v1.2 – Simplified Objective & Improved gene diversity
+### v1.1 – Simplified Objective & Improved gene diversity
 
 * Removed collision penalties
 * Removed neighbor avoidance behavior
